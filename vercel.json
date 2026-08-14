@@ -4,16 +4,5 @@
       "path": "/api/refresh",
       "schedule": "0 6 * * *"
     }
-  ],
-  "functions": {
-    "src/app/api/refresh/route.ts": {
-      "maxDuration": 60
-    },
-    "src/app/api/admin/migrate/route.ts": {
-      "maxDuration": 60
-    },
-    "src/app/api/admin/seed/route.ts": {
-      "maxDuration": 60
-    }
-  }
+  ]
 }
