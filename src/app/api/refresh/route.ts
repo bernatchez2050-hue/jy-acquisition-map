@@ -1,6 +1,7 @@
 import { runDiscoveryWithLog } from "@/lib/discovery";
 import { databaseEnabled } from "@/lib/store";
 import { loadAcquisitionData } from "@/lib/store";
+import { isAdminRequestAuthorized } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -18,6 +19,7 @@ function refreshAccess(request: Request) {
   const cronAuth = request.headers.get("x-vercel-cron") ?? request.headers.get("user-agent");
   if (cronAuth?.includes("vercel-cron") && process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`) return "private";
   if (secret && (headerSecret === secret || auth === `Bearer ${secret}`)) return "private";
+  if (isAdminRequestAuthorized(request)) return "private";
   if (!secret || process.env.PUBLIC_REFRESH_ENABLED === "true") return "public";
   return null;
 }

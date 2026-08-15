@@ -1,19 +1,12 @@
 import { schemaSql } from "@/lib/schema-sql";
 import { databaseEnabled, getPool } from "@/lib/store";
+import { isAdminRequestAuthorized } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-function isAuthorized(request: Request) {
-  const secret = process.env.REFRESH_WEBHOOK_SECRET ?? process.env.CRON_SECRET;
-  if (!secret) return false;
-  const headerSecret = request.headers.get("x-refresh-secret");
-  const auth = request.headers.get("authorization");
-  return headerSecret === secret || auth === `Bearer ${secret}`;
-}
-
 export async function POST(request: Request) {
-  if (!isAuthorized(request)) {
+  if (!isAdminRequestAuthorized(request)) {
     return Response.json({ ok: false, message: "Unauthorized migration request." }, { status: 401 });
   }
 
