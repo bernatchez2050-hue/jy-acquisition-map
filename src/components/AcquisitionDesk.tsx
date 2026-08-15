@@ -5,6 +5,7 @@ import {
   BedDouble,
   CheckCircle2,
   CircleDollarSign,
+  Clock3,
   Database,
   Download,
   ExternalLink,
@@ -36,7 +37,8 @@ import type {
 } from "@/lib/types";
 
 type Theme = "light" | "dark";
-type SortMode = "fit" | "price" | "pricePerRoom" | "rooms";
+type SortMode = "fit" | "price" | "pricePerRoom" | "rooms" | "added";
+type FreshnessFilter = "all" | "unseen" | "imported" | "latest12" | "today" | "last7";
 type FocusTarget = { lat: number; lng: number; zoom: number; nonce: number };
 
 type LeafletModule = typeof import("leaflet");
@@ -84,6 +86,17 @@ const WORKFLOW_STAGES: WorkflowStage[] = [
   "offer_candidate",
   "rejected"
 ];
+
+const LATEST_ENTRY_COUNT = 12;
+
+const FRESHNESS_LABELS: Record<FreshnessFilter, string> = {
+  all: "All",
+  unseen: "New since visit",
+  imported: "Latest imports",
+  latest12: "Latest 12",
+  today: "Today",
+  last7: "7 days"
+};
 
 function useStoredState<T>(key: string, initialValue: T) {
   const [state, setState] = useState<T>(initialValue);
@@ -145,11 +158,63 @@ async function parseRefreshResponse(response: Response) {
   const text = await response.text();
   if (!text.trim()) return { message: "" };
   try {
-    return JSON.parse(text) as { ok?: boolean; message?: string };
+    return JSON.parse(text) as { ok?: boolean; message?: string; propertiesImported?: number };
   } catch {
     const detail = text.replace(/\s+/g, " ").trim().slice(0, 180);
     throw new Error(response.ok ? "Refresh returned an invalid response." : `Refresh failed (${response.status}): ${detail}`);
   }
+}
+
+function baselineCount(data: AcquisitionData) {
+  return data.metadata.baselinePropertyCount ?? 300;
+}
+
+function importedProperty(property: PropertyRecord, baseline: number) {
+  return property.sourceIndex > baseline || property.id.startsWith("disc-");
+}
+
+function addedTimestamp(property: PropertyRecord) {
+  const parsed = Date.parse(property.addedAt ?? "");
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sameLocalDay(timestamp: number, date = new Date()) {
+  const added = new Date(timestamp);
+  return (
+    added.getFullYear() === date.getFullYear() &&
+    added.getMonth() === date.getMonth() &&
+    added.getDate() === date.getDate()
+  );
+}
+
+function addedWithinDays(property: PropertyRecord, days: number) {
+  const timestamp = addedTimestamp(property);
+  if (timestamp == null) return false;
+  return Date.now() - timestamp <= days * 24 * 60 * 60 * 1000;
+}
+
+function formatAddedDate(property: PropertyRecord) {
+  const timestamp = addedTimestamp(property);
+  if (timestamp == null) return null;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  }).format(new Date(timestamp));
+}
+
+function initialSeenPropertyIds(data: AcquisitionData) {
+  const baseline = baselineCount(data);
+  return data.properties.filter((property) => !importedProperty(property, baseline)).map((property) => property.id);
+}
+
+function propertyFreshLabel(property: PropertyRecord, baseline: number, seenPropertyIds: Set<string>) {
+  const imported = importedProperty(property, baseline);
+  const unseen = !seenPropertyIds.has(property.id);
+  if (unseen && imported) return "New import";
+  if (unseen) return "New";
+  if (imported) return "Imported";
+  return null;
 }
 
 function scoreTone(score: number) {
@@ -394,6 +459,8 @@ function PropertyRow({
   selected,
   shortlisted,
   stage,
+  freshLabel,
+  addedLabel,
   onSelect,
   onToggleShortlist
 }: {
@@ -402,6 +469,8 @@ function PropertyRow({
   selected: boolean;
   shortlisted: boolean;
   stage: WorkflowStage;
+  freshLabel: string | null;
+  addedLabel: string | null;
   onSelect: () => void;
   onToggleShortlist: () => void;
 }) {
@@ -411,6 +480,9 @@ function PropertyRow({
       <span className="row-main">
         <span className="row-title">{property.name}</span>
         <span className="row-meta">
+          {freshLabel && <span className="row-fresh">{freshLabel}</span>}
+          {freshLabel && " · "}
+          {addedLabel && <span>Added {addedLabel} · </span>}
           {property.areaName} · {property.rooms ?? "-"} rooms · {compactCurrency(property.priceValue)}
         </span>
       </span>
@@ -438,6 +510,8 @@ function DetailPanel({
   area,
   shortlisted,
   stage,
+  freshLabel,
+  addedLabel,
   note,
   onToggleShortlist,
   onStageChange,
@@ -448,6 +522,8 @@ function DetailPanel({
   area: Area | undefined;
   shortlisted: boolean;
   stage: WorkflowStage;
+  freshLabel: string | null;
+  addedLabel: string | null;
   note: string;
   onToggleShortlist: () => void;
   onStageChange: (stage: WorkflowStage) => void;
@@ -473,6 +549,12 @@ function DetailPanel({
         <span className="eyebrow">{property.areaName}</span>
         <h2>{property.name}</h2>
         <p>{property.location}</p>
+        {(freshLabel || addedLabel) && (
+          <div className="detail-badges">
+            {freshLabel && <span className="fresh-pill">{freshLabel}</span>}
+            {addedLabel && <span className="fresh-pill quiet">Added {addedLabel}</span>}
+          </div>
+        )}
         <div className="detail-actions">
           <button className={`command-button ${shortlisted ? "active" : ""}`} type="button" onClick={onToggleShortlist}>
             <Star size={16} fill={shortlisted ? "currentColor" : "none"} />
@@ -518,6 +600,10 @@ function DetailPanel({
           <div>
             <dt>Last seen</dt>
             <dd>{property.lastSeen}</dd>
+          </div>
+          <div>
+            <dt>Added</dt>
+            <dd>{addedLabel ?? "-"}</dd>
           </div>
         </dl>
       </div>
@@ -607,11 +693,13 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
   const [shortlist, setShortlist] = useStoredState<string[]>("jy-shortlist", []);
   const [workflow, setWorkflow] = useStoredState<Record<string, WorkflowStage>>("jy-workflow", {});
   const [notes, setNotes] = useStoredState<Record<string, string>>("jy-notes", {});
+  const [seenPropertyIds, setSeenPropertyIds] = useStoredState<string[]>("jy-seen-property-ids", initialSeenPropertyIds(initialData));
   const [query, setQuery] = useState("");
   const [activeAreaIds, setActiveAreaIds] = useState(() => new Set(initialData.areas.map((area) => area.id)));
   const [statuses, setStatuses] = useState(() => new Set<ListingStatus>(["live", "under_offer", "unconfirmed"]));
   const [tenures, setTenures] = useState(() => new Set<Tenure>(["freehold", "leasehold", "unknown"]));
   const [kind, setKind] = useState<PropertyKind | "all">("all");
+  const [freshnessFilter, setFreshnessFilter] = useState<FreshnessFilter>("all");
   const [maxPrice, setMaxPrice] = useState(5_000_000);
   const [minRooms, setMinRooms] = useState(0);
   const [minScore, setMinScore] = useState(0);
@@ -625,6 +713,39 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  const currentBaselineCount = baselineCount(data);
+  const seenPropertyIdSet = useMemo(() => new Set(seenPropertyIds), [seenPropertyIds]);
+  const latestPropertyIdSet = useMemo(
+    () =>
+      new Set(
+        [...data.properties]
+          .sort((a, b) => b.sourceIndex - a.sourceIndex)
+          .slice(0, LATEST_ENTRY_COUNT)
+          .map((property) => property.id)
+      ),
+    [data.properties]
+  );
+  const freshnessCounts = useMemo(() => {
+    const counts: Record<FreshnessFilter, number> = {
+      all: data.properties.length,
+      unseen: 0,
+      imported: 0,
+      latest12: Math.min(LATEST_ENTRY_COUNT, data.properties.length),
+      today: 0,
+      last7: 0
+    };
+
+    data.properties.forEach((property) => {
+      if (!seenPropertyIdSet.has(property.id)) counts.unseen += 1;
+      if (importedProperty(property, currentBaselineCount)) counts.imported += 1;
+      const timestamp = addedTimestamp(property);
+      if (timestamp != null && sameLocalDay(timestamp)) counts.today += 1;
+      if (addedWithinDays(property, 7)) counts.last7 += 1;
+    });
+
+    return counts;
+  }, [currentBaselineCount, data.properties, seenPropertyIdSet]);
 
   const sourceOptions = useMemo(() => {
     const counts = new Map<string, number>();
@@ -642,6 +763,14 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
       if (!statuses.has(property.status)) return false;
       if (!tenures.has(property.tenure)) return false;
       if (kind !== "all" && property.kind !== kind) return false;
+      if (freshnessFilter === "unseen" && seenPropertyIdSet.has(property.id)) return false;
+      if (freshnessFilter === "imported" && !importedProperty(property, currentBaselineCount)) return false;
+      if (freshnessFilter === "latest12" && !latestPropertyIdSet.has(property.id)) return false;
+      if (freshnessFilter === "today") {
+        const timestamp = addedTimestamp(property);
+        if (timestamp == null || !sameLocalDay(timestamp)) return false;
+      }
+      if (freshnessFilter === "last7" && !addedWithinDays(property, 7)) return false;
       if (property.priceValue != null && property.priceValue > maxPrice) return false;
       if ((property.rooms ?? 0) < minRooms) return false;
       if (property.fitScore < minScore) return false;
@@ -666,9 +795,25 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
         return (a.pricePerRoom ?? Number.MAX_SAFE_INTEGER) - (b.pricePerRoom ?? Number.MAX_SAFE_INTEGER);
       }
       if (sortMode === "rooms") return (b.rooms ?? 0) - (a.rooms ?? 0);
+      if (sortMode === "added") return (addedTimestamp(b) ?? 0) - (addedTimestamp(a) ?? 0) || b.sourceIndex - a.sourceIndex;
       return b.fitScore - a.fitScore;
     });
-  }, [activeAreaIds, data.properties, kind, maxPrice, minRooms, minScore, query, sortMode, statuses, tenures]);
+  }, [
+    activeAreaIds,
+    currentBaselineCount,
+    data.properties,
+    freshnessFilter,
+    kind,
+    latestPropertyIdSet,
+    maxPrice,
+    minRooms,
+    minScore,
+    query,
+    seenPropertyIdSet,
+    sortMode,
+    statuses,
+    tenures
+  ]);
 
   const selectedProperty = useMemo(
     () => filteredProperties.find((property) => property.id === selectedId) ?? filteredProperties[0] ?? null,
@@ -699,6 +844,7 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
     setStatuses(new Set<ListingStatus>(["live", "under_offer", "unconfirmed"]));
     setTenures(new Set<Tenure>(["freehold", "leasehold", "unknown"]));
     setKind("all");
+    setFreshnessFilter("all");
     setMaxPrice(5_000_000);
     setMinRooms(0);
     setMinScore(0);
@@ -728,7 +874,9 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
         throw new Error(body.message ?? "Refresh request failed.");
       }
       setRefreshMessage(body.message ?? "Refresh requested.");
+      const importedCount = body.propertiesImported ?? 0;
       await reloadData(false);
+      if (importedCount > 0) chooseFreshnessFilter("unseen");
     } catch (error) {
       setRefreshMessage(error instanceof Error ? error.message : "Refresh request failed.");
     } finally {
@@ -736,12 +884,24 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
     }
   }
 
+  function chooseFreshnessFilter(filter: FreshnessFilter) {
+    setFreshnessFilter(filter);
+    if (filter !== "all") setSortMode("added");
+  }
+
   function focusCluster(cluster: Cluster) {
     setFocusTarget({ lat: cluster.lat, lng: cluster.lng, zoom: cluster.zoom, nonce: Date.now() });
   }
 
+  function markShownAsSeen() {
+    const visibleIds = filteredProperties.map((property) => property.id);
+    setSeenPropertyIds((current) => [...new Set([...current, ...visibleIds])]);
+  }
+
   const currentStage = selectedProperty ? workflow[selectedProperty.id] ?? "new" : "new";
   const currentNote = selectedProperty ? notes[selectedProperty.id] ?? "" : "";
+  const selectedFreshLabel = selectedProperty ? propertyFreshLabel(selectedProperty, currentBaselineCount, seenPropertyIdSet) : null;
+  const selectedAddedLabel = selectedProperty ? formatAddedDate(selectedProperty) : null;
 
   return (
     <main className="desk-shell">
@@ -758,6 +918,7 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
 
         <div className="topbar-metrics">
           <Metric icon={<MapPin size={16} />} label="Shown" value={String(filteredProperties.length)} />
+          <Metric icon={<Clock3 size={16} />} label="New imports" value={String(freshnessCounts.imported)} tone="price" />
           <Metric icon={<CheckCircle2 size={16} />} label="Live" value={String(filteredStats.live)} tone="strong" />
           <Metric icon={<CircleDollarSign size={16} />} label="Median p/rm" value={compactCurrency(data.summary.medianPricePerRoom)} />
           <Metric icon={<Target size={16} />} label="Avg score" value={String(filteredStats.avgScore)} />
@@ -791,6 +952,31 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
                 <X size={15} />
                 Clear
               </button>
+            </section>
+
+            <section className="filter-section">
+              <div className="section-title">
+                <Clock3 size={15} />
+                <span>Freshness</span>
+              </div>
+              <div className="fresh-grid">
+                {(Object.keys(FRESHNESS_LABELS) as FreshnessFilter[]).map((item) => (
+                  <button
+                    className={freshnessFilter === item ? "active" : ""}
+                    key={item}
+                    type="button"
+                    onClick={() => chooseFreshnessFilter(item)}
+                  >
+                    <span>{FRESHNESS_LABELS[item]}</span>
+                    <strong>{freshnessCounts[item]}</strong>
+                  </button>
+                ))}
+              </div>
+              <div className="fresh-actions">
+                <button className="clear-button compact" type="button" onClick={markShownAsSeen} disabled={!filteredProperties.length}>
+                  Mark shown seen
+                </button>
+              </div>
             </section>
 
             <section className="filter-section">
@@ -843,6 +1029,7 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
                   <option value="price">Price</option>
                   <option value="pricePerRoom">Price per room</option>
                   <option value="rooms">Room count</option>
+                  <option value="added">Date added</option>
                 </select>
               </label>
             </section>
@@ -976,6 +1163,8 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
               {filteredProperties.map((property) => (
                 <PropertyRow
                   area={data.areas.find((area) => area.id === property.areaId)}
+                  addedLabel={formatAddedDate(property)}
+                  freshLabel={propertyFreshLabel(property, currentBaselineCount, seenPropertyIdSet)}
                   key={property.id}
                   property={property}
                   selected={selectedProperty?.id === property.id}
@@ -994,6 +1183,8 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
           area={selectedArea}
           shortlisted={selectedProperty ? shortlist.includes(selectedProperty.id) : false}
           stage={currentStage}
+          freshLabel={selectedFreshLabel}
+          addedLabel={selectedAddedLabel}
           note={currentNote}
           onToggleShortlist={() => selectedProperty && toggleShortlist(selectedProperty.id)}
           onStageChange={(stage) =>

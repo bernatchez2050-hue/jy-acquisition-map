@@ -141,7 +141,7 @@ a {
 .topbar-metrics {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  grid-template-columns: repeat(5, minmax(96px, 1fr));
 }
 
 .metric {
@@ -329,6 +329,18 @@ a {
   padding: 0 10px;
 }
 
+.clear-button.compact {
+  font-size: 12px;
+  min-height: 34px;
+  width: 100%;
+}
+
+.clear-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
+}
+
 .section-title {
   align-items: center;
   color: var(--muted);
@@ -393,6 +405,43 @@ textarea {
 .chip-grid {
   display: grid;
   gap: 7px;
+}
+
+.fresh-grid {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.fresh-grid button {
+  align-items: center;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 6px 8px;
+}
+
+.fresh-grid button.active {
+  background: color-mix(in srgb, var(--teal) 12%, var(--panel-2));
+  border-color: var(--teal);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.fresh-grid strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.fresh-actions {
+  display: flex;
+  margin-top: 8px;
 }
 
 .chip-grid.three {
@@ -675,6 +724,11 @@ textarea {
   white-space: nowrap;
 }
 
+.row-fresh {
+  color: var(--teal);
+  font-weight: 800;
+}
+
 .score-chip,
 .status-chip,
 .stage-chip {
@@ -765,6 +819,29 @@ textarea {
   color: var(--muted);
   font-size: 13px;
   margin: 8px 0 0;
+}
+
+.detail-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.fresh-pill {
+  background: color-mix(in srgb, var(--teal) 12%, var(--panel-2));
+  border: 1px solid color-mix(in srgb, var(--teal) 55%, var(--border));
+  border-radius: 999px;
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 8px;
+}
+
+.fresh-pill.quiet {
+  background: var(--panel-2);
+  border-color: var(--border);
+  color: var(--muted);
 }
 
 .detail-actions {

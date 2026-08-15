@@ -60,6 +60,7 @@ export type PropertyRecord = {
   status: ListingStatus;
   note: string;
   lastSeen: string;
+  addedAt?: string;
   fitScore: number;
   confidence: number;
 };
@@ -70,6 +71,7 @@ export type AcquisitionMetadata = {
   refreshedAt: string;
   extractedAt: string;
   propertyCount: number;
+  baselinePropertyCount?: number;
 };
 
 export type AcquisitionSummary = {

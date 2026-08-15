@@ -10,6 +10,7 @@ type SeedData = {
 };
 
 const seedData = seed as SeedData;
+const baselinePropertyCount = seedData.properties.length;
 
 let poolPromise: Promise<import("pg").Pool> | null = null;
 
@@ -44,10 +45,27 @@ export async function getPool() {
   return poolPromise;
 }
 
+function dateOnly(value: unknown) {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const raw = String(value ?? "");
+  const parsed = Date.parse(raw);
+  if (Number.isFinite(parsed)) return new Date(parsed).toISOString().slice(0, 10);
+  return raw;
+}
+
+function isoDateTime(value: unknown) {
+  if (value instanceof Date) return value.toISOString();
+  const raw = String(value ?? "");
+  const parsed = Date.parse(raw);
+  if (Number.isFinite(parsed)) return new Date(parsed).toISOString();
+  return raw;
+}
+
 function rowToProperty(row: Record<string, unknown>): PropertyRecord {
+  const sourceIndex = Number(row.source_index);
   return {
     id: String(row.id),
-    sourceIndex: Number(row.source_index),
+    sourceIndex,
     name: String(row.name),
     areaId: Number(row.area_id),
     areaName: String(row.area_name),
@@ -66,7 +84,8 @@ function rowToProperty(row: Record<string, unknown>): PropertyRecord {
     url: String(row.url),
     status: row.status as PropertyRecord["status"],
     note: String(row.note ?? ""),
-    lastSeen: String(row.last_seen),
+    lastSeen: dateOnly(row.last_seen),
+    addedAt: sourceIndex <= baselinePropertyCount ? seedData.metadata.refreshedAt : isoDateTime(row.inserted_at),
     fitScore: Number(row.fit_score),
     confidence: Number(row.confidence)
   };
@@ -99,6 +118,7 @@ async function loadPropertiesFromDatabase() {
       status,
       note,
       last_seen,
+      inserted_at,
       fit_score,
       confidence
     from properties
@@ -109,12 +129,18 @@ async function loadPropertiesFromDatabase() {
 }
 
 export async function loadAcquisitionData(): Promise<AcquisitionData> {
-  const properties = (await loadPropertiesFromDatabase()) ?? seedData.properties;
+  const properties =
+    (await loadPropertiesFromDatabase()) ??
+    seedData.properties.map((property) => ({
+      ...property,
+      addedAt: seedData.metadata.refreshedAt
+    }));
 
   return {
     metadata: {
       ...seedData.metadata,
-      propertyCount: properties.length
+      propertyCount: properties.length,
+      baselinePropertyCount
     },
     areas: seedData.areas,
     clusters: seedData.clusters,
