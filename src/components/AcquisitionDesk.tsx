@@ -134,6 +134,13 @@ function toggleSetValue<T>(set: Set<T>, value: T) {
   return next;
 }
 
+function parseBoundedNumber(value: string, min: number, max: number) {
+  if (!value.trim()) return min;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return min;
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
 function scoreTone(score: number) {
   if (score >= 75) return "strong";
   if (score >= 58) return "watch";
@@ -220,6 +227,9 @@ function AcquisitionMap({
   const circleLayerRef = useRef<LeafletLayerGroup | null>(null);
   const tilesRef = useRef<{ light: LeafletTileLayer; dark: LeafletTileLayer } | null>(null);
   const fittedOnceRef = useRef(false);
+  const lastPropertySignatureRef = useRef("");
+  const [mapReady, setMapReady] = useState(false);
+  const propertySignature = useMemo(() => properties.map((property) => property.id).join("|"), [properties]);
 
   useEffect(() => {
     let disposed = false;
@@ -245,12 +255,16 @@ function AcquisitionMap({
       });
 
       tilesRef.current = { light, dark };
-      (theme === "dark" ? dark : light).addTo(map);
+      light.addTo(map);
       L.control.zoom({ position: "bottomleft" }).addTo(map);
       markerLayerRef.current = L.layerGroup().addTo(map);
       circleLayerRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
-      requestAnimationFrame(() => map.invalidateSize(true));
+      requestAnimationFrame(() => {
+        if (disposed) return;
+        map.invalidateSize(true);
+        setMapReady(true);
+      });
     });
 
     return () => {
@@ -258,12 +272,12 @@ function AcquisitionMap({
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [theme]);
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
     const tiles = tilesRef.current;
-    if (!map || !tiles) return;
+    if (!mapReady || !map || !tiles) return;
 
     if (theme === "dark") {
       if (map.hasLayer(tiles.light)) map.removeLayer(tiles.light);
@@ -272,14 +286,14 @@ function AcquisitionMap({
       if (map.hasLayer(tiles.dark)) map.removeLayer(tiles.dark);
       if (!map.hasLayer(tiles.light)) tiles.light.addTo(map);
     }
-  }, [theme]);
+  }, [mapReady, theme]);
 
   useEffect(() => {
     const L = leafletRef.current;
     const map = mapRef.current;
     const markerLayer = markerLayerRef.current;
     const circleLayer = circleLayerRef.current;
-    if (!L || !map || !markerLayer || !circleLayer) return;
+    if (!mapReady || !L || !map || !markerLayer || !circleLayer) return;
 
     markerLayer.clearLayers();
     circleLayer.clearLayers();
@@ -315,11 +329,12 @@ function AcquisitionMap({
       bounds.extend([property.lat, property.lng]);
     });
 
-    if (properties.length && !fittedOnceRef.current) {
+    if (properties.length && (!fittedOnceRef.current || lastPropertySignatureRef.current !== propertySignature)) {
       map.fitBounds(bounds, { padding: [36, 36], maxZoom: 8 });
       fittedOnceRef.current = true;
+      lastPropertySignatureRef.current = propertySignature;
     }
-  }, [areas, onSelect, properties, selectedId]);
+  }, [areas, mapReady, onSelect, properties, propertySignature, selectedId]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -645,8 +660,8 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
   }, [activeAreaIds, data.properties, kind, maxPrice, minRooms, minScore, query, sortMode, statuses, tenures]);
 
   const selectedProperty = useMemo(
-    () => data.properties.find((property) => property.id === selectedId) ?? filteredProperties[0] ?? null,
-    [data.properties, filteredProperties, selectedId]
+    () => filteredProperties.find((property) => property.id === selectedId) ?? filteredProperties[0] ?? null,
+    [filteredProperties, selectedId]
   );
 
   const selectedArea = selectedProperty ? data.areas.find((area) => area.id === selectedProperty.areaId) : undefined;
@@ -784,11 +799,27 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
               <div className="control-row">
                 <label>
                   <span>Min rooms</span>
-                  <input min={0} max={40} type="number" value={minRooms} onChange={(event) => setMinRooms(Number(event.target.value))} />
+                  <input
+                    inputMode="numeric"
+                    min={0}
+                    max={40}
+                    placeholder="0"
+                    type="number"
+                    value={minRooms === 0 ? "" : String(minRooms)}
+                    onChange={(event) => setMinRooms(parseBoundedNumber(event.target.value, 0, 40))}
+                  />
                 </label>
                 <label>
                   <span>Min score</span>
-                  <input min={0} max={100} type="number" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} />
+                  <input
+                    inputMode="numeric"
+                    min={0}
+                    max={100}
+                    placeholder="0"
+                    type="number"
+                    value={minScore === 0 ? "" : String(minScore)}
+                    onChange={(event) => setMinScore(parseBoundedNumber(event.target.value, 0, 100))}
+                  />
                 </label>
               </div>
               <label className="select-label">

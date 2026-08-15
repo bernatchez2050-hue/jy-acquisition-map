@@ -3,7 +3,7 @@ import { loadAcquisitionData } from "@/lib/store";
 export const dynamic = "force-dynamic";
 
 function csvCell(value: unknown) {
-  const text = value == null ? "" : String(value);
+  const text = value == null ? "" : String(value).replace(/\r?\n|\r/g, " ");
   return `"${text.replace(/"/g, '""')}"`;
 }
 
@@ -45,7 +45,7 @@ export async function GET() {
     property.note
   ]);
 
-  const csv = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+  const csv = `\uFEFF${[headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
 
   return new Response(csv, {
     headers: {
