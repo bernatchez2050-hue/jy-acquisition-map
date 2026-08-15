@@ -601,7 +601,7 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
   const [statuses, setStatuses] = useState(() => new Set<ListingStatus>(["live", "under_offer", "unconfirmed"]));
   const [tenures, setTenures] = useState(() => new Set<Tenure>(["freehold", "leasehold", "unknown"]));
   const [kind, setKind] = useState<PropertyKind | "all">("all");
-  const [maxPrice, setMaxPrice] = useState(3_000_000);
+  const [maxPrice, setMaxPrice] = useState(5_000_000);
   const [minRooms, setMinRooms] = useState(0);
   const [minScore, setMinScore] = useState(0);
   const [sortMode, setSortMode] = useState<SortMode>("fit");
@@ -688,7 +688,7 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
     setStatuses(new Set<ListingStatus>(["live", "under_offer", "unconfirmed"]));
     setTenures(new Set<Tenure>(["freehold", "leasehold", "unknown"]));
     setKind("all");
-    setMaxPrice(3_000_000);
+    setMaxPrice(5_000_000);
     setMinRooms(0);
     setMinScore(0);
     setSortMode("fit");
