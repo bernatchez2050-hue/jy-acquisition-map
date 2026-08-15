@@ -908,11 +908,16 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
       <header className="topbar">
         <div className="brand-block">
           <div className="brand-mark">JY</div>
-          <div>
+          <div className="brand-copy">
             <h1>JY Hotels Acquisition Map</h1>
-            <span>
-              {data.summary.total} properties · refreshed {data.metadata.refreshedAt}
-            </span>
+            <div className="brand-meta">
+              <span className="brand-subtitle">
+                {data.summary.total} properties · refreshed {data.metadata.refreshedAt}
+              </span>
+              <a className="builder-link" href="https://bizzxpert.com" target="_blank" rel="noreferrer">
+                Built by BizzXpert
+              </a>
+            </div>
           </div>
         </div>
 
@@ -1135,6 +1140,11 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
                 </div>
               ))}
             </section>
+
+            <a className="sidebar-brand" href="https://bizzxpert.com" target="_blank" rel="noreferrer" aria-label="Built by BizzXpert">
+              <span>Built by</span>
+              <img src="/bizzxpert-logo.png" alt="BizzXpert" width={120} height={54} />
+            </a>
           </div>
         </aside>
 

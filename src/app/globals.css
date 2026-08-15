@@ -9,6 +9,12 @@
   --faint: #9a958b;
   --border: #d8d3ca;
   --border-strong: #bfb7aa;
+  --bizz-blue: #2b6cb0;
+  --bizz-deep-blue: #255c96;
+  --bizz-teal: #38b2ac;
+  --bizz-deep-teal: #277d78;
+  --bizz-charcoal: #1a202c;
+  --bizz-off-white: #f7fafc;
   --teal: #006b70;
   --teal-2: #2f8a88;
   --amber: #c87f2f;
@@ -107,8 +113,9 @@ a {
 
 .brand-mark {
   align-items: center;
-  background: var(--teal);
+  background: linear-gradient(135deg, var(--bizz-blue), var(--bizz-teal));
   border-radius: 8px;
+  box-shadow: 0 8px 18px rgba(43, 108, 176, 0.18);
   color: white;
   display: flex;
   flex: 0 0 auto;
@@ -117,6 +124,12 @@ a {
   height: 38px;
   justify-content: center;
   width: 38px;
+}
+
+.brand-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
 }
 
 .brand-block h1,
@@ -131,11 +144,39 @@ a {
   line-height: 1.15;
 }
 
-.brand-block span,
+.brand-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.brand-subtitle,
 .list-head span,
 .eyebrow {
   color: var(--muted);
   font-size: 12px;
+}
+
+.builder-link {
+  align-items: center;
+  background: color-mix(in srgb, var(--bizz-teal) 10%, var(--panel-2));
+  border: 1px solid color-mix(in srgb, var(--bizz-teal) 34%, var(--border));
+  border-radius: 999px;
+  color: var(--bizz-deep-blue);
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  min-height: 20px;
+  padding: 4px 8px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.builder-link:hover {
+  background: color-mix(in srgb, var(--bizz-teal) 16%, var(--panel-2));
+  border-color: var(--bizz-teal);
 }
 
 .topbar-metrics {
@@ -527,6 +568,37 @@ textarea {
   font-size: 12px;
   justify-content: space-between;
   padding: 4px 0;
+}
+
+.sidebar-brand {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid color-mix(in srgb, var(--bizz-teal) 28%, #cbd5e0);
+  border-radius: 8px;
+  box-shadow: var(--shadow-soft);
+  color: var(--bizz-charcoal);
+  display: flex;
+  gap: 10px;
+  margin: 12px 0 4px;
+  min-height: 60px;
+  padding: 8px 10px;
+  text-decoration: none;
+}
+
+.sidebar-brand span {
+  color: var(--bizz-deep-blue);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sidebar-brand img {
+  display: block;
+  height: auto;
+  width: 120px;
 }
 
 .workspace {
@@ -1057,6 +1129,10 @@ textarea {
 @media (max-width: 640px) {
   .brand-block h1 {
     font-size: 16px;
+  }
+
+  .builder-link {
+    display: none;
   }
 
   .topbar {
