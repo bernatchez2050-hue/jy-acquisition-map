@@ -18,8 +18,10 @@ type SearchResult = {
 
 type DiscoveryRunOptions = {
   importDiscovered?: boolean;
+  includePageFetch?: boolean;
   maxQueries?: number;
   resultsPerQuery?: number;
+  timeBudgetMs?: number;
 };
 
 type DiscoveryRunResult = {
@@ -29,6 +31,8 @@ type DiscoveryRunResult = {
   candidates: DiscoveryCandidate[];
   candidatesNew: number;
   propertiesImported: number;
+  stoppedEarly: boolean;
+  warnings: string[];
   message: string;
 };
 
@@ -37,6 +41,9 @@ const USER_AGENT =
 
 const RESULT_LIMIT = Number(process.env.DISCOVERY_RESULTS_PER_QUERY ?? 8);
 const QUERY_LIMIT = Number(process.env.DISCOVERY_MAX_QUERIES ?? 12);
+const SEARCH_TIMEOUT_MS = Number(process.env.DISCOVERY_SEARCH_TIMEOUT_MS ?? 10_000);
+const PAGE_FETCH_TIMEOUT_MS = Number(process.env.DISCOVERY_PAGE_FETCH_TIMEOUT_MS ?? 2_500);
+const DEFAULT_TIME_BUDGET_MS = Number(process.env.DISCOVERY_TIME_BUDGET_MS ?? 45_000);
 
 function stableId(prefix: string, value: string) {
   return `${prefix}-${crypto.createHash("sha1").update(value).digest("hex").slice(0, 16)}`;
@@ -245,12 +252,27 @@ function configuredQueries() {
   }
 }
 
-async function fetchJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, init);
-  if (!response.ok) {
-    throw new Error(`Search provider returned ${response.status}`);
+async function fetchJson<T>(url: string, init?: RequestInit, timeoutMs = SEARCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 180);
+      throw new Error(`Search provider returned ${response.status}${detail ? `: ${detail}` : ""}`);
+    }
+    return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Search provider request timed out.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return (await response.json()) as T;
 }
 
 async function searchSerpApi(query: SearchQuery, limit: number): Promise<SearchResult[]> {
@@ -341,7 +363,7 @@ async function searchWeb(query: SearchQuery, limit: number) {
 
 async function fetchPageText(url: string) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 9000);
+  const timeout = setTimeout(() => controller.abort(), PAGE_FETCH_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
       headers: {
@@ -388,8 +410,12 @@ function looksLikeHospitality(result: SearchResult, pageText: string) {
   return true;
 }
 
-async function resultToCandidate(result: SearchResult, centroids: Map<number, { lat: number; lng: number }>) {
-  const pageHtml = await fetchPageText(result.url);
+async function resultToCandidate(
+  result: SearchResult,
+  centroids: Map<number, { lat: number; lng: number }>,
+  includePageFetch: boolean
+) {
+  const pageHtml = includePageFetch ? await fetchPageText(result.url) : null;
   const pageText = pageHtml ? stripHtml(decodeHtml(pageHtml)).slice(0, 12_000) : "";
   if (!looksLikeHospitality(result, pageText)) return null;
 
@@ -474,20 +500,55 @@ export async function runDiscovery(options: DiscoveryRunOptions = {}): Promise<D
       candidates: [],
       candidatesNew: 0,
       propertiesImported: 0,
+      stoppedEarly: false,
+      warnings: [],
       message: "No search provider is configured. Set SERPAPI_API_KEY, BRAVE_SEARCH_API_KEY, or BING_SEARCH_API_KEY in Vercel."
     };
   }
 
   const queries = configuredQueries().slice(0, options.maxQueries ?? QUERY_LIMIT);
+  const resultsPerQuery = options.resultsPerQuery ?? RESULT_LIMIT;
+  const includePageFetch = options.includePageFetch ?? process.env.DISCOVERY_FETCH_PAGES === "true";
+  const deadline = Date.now() + (options.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS);
   const centroids = areaCentroids();
   const candidates: DiscoveryCandidate[] = [];
+  const warnings: string[] = [];
+  let queriesRun = 0;
+  let stoppedEarly = false;
+
+  function hasTimeRemaining() {
+    return Date.now() < deadline - 2_000;
+  }
 
   for (const query of queries) {
-    const results = await searchWeb(query, options.resultsPerQuery ?? RESULT_LIMIT);
+    if (!hasTimeRemaining()) {
+      stoppedEarly = true;
+      break;
+    }
+
+    let results: SearchResult[] = [];
+    try {
+      results = await searchWeb(query, resultsPerQuery);
+      queriesRun += 1;
+    } catch (error) {
+      warnings.push(error instanceof Error ? error.message : "Search query failed.");
+      continue;
+    }
+
     for (const result of results) {
-      const candidate = await resultToCandidate(result, centroids);
+      if (!hasTimeRemaining()) {
+        stoppedEarly = true;
+        break;
+      }
+      const candidate = await resultToCandidate(result, centroids, includePageFetch);
       if (candidate) candidates.push(candidate);
     }
+
+    if (stoppedEarly) break;
+  }
+
+  if (!queriesRun && warnings.length) {
+    throw new Error(warnings[0]);
   }
 
   const deduped = dedupeCandidates(candidates);
@@ -505,11 +566,15 @@ export async function runDiscovery(options: DiscoveryRunOptions = {}): Promise<D
   return {
     configured: true,
     provider,
-    queriesRun: queries.length,
+    queriesRun,
     candidates: deduped,
     candidatesNew,
     propertiesImported,
-    message: `Discovery finished with ${deduped.length} candidates (${candidatesNew} new).`
+    stoppedEarly,
+    warnings,
+    message: stoppedEarly
+      ? `Discovery stopped before the time limit with ${deduped.length} candidates (${candidatesNew} new).`
+      : `Discovery finished with ${deduped.length} candidates (${candidatesNew} new).`
   };
 }
 
@@ -525,7 +590,7 @@ export async function runDiscoveryWithLog(options: DiscoveryRunOptions = {}) {
       candidatesFound: result.candidates.length,
       candidatesNew: result.candidatesNew,
       propertiesImported: result.propertiesImported,
-      message: result.message
+      message: result.warnings.length ? `${result.message} ${result.warnings.join(" ")}` : result.message
     });
     return { runId, ...result };
   } catch (error) {

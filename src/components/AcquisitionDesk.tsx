@@ -141,6 +141,17 @@ function parseBoundedNumber(value: string, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.trunc(parsed)));
 }
 
+async function parseRefreshResponse(response: Response) {
+  const text = await response.text();
+  if (!text.trim()) return { message: "" };
+  try {
+    return JSON.parse(text) as { ok?: boolean; message?: string };
+  } catch {
+    const detail = text.replace(/\s+/g, " ").trim().slice(0, 180);
+    throw new Error(response.ok ? "Refresh returned an invalid response." : `Refresh failed (${response.status}): ${detail}`);
+  }
+}
+
 function scoreTone(score: number) {
   if (score >= 75) return "strong";
   if (score >= 58) return "watch";
@@ -694,13 +705,13 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
     setSortMode("fit");
   }
 
-  async function reloadData() {
+  async function reloadData(showMessage = true) {
     setLoading(true);
     try {
       const response = await fetch("/api/properties", { cache: "no-store" });
       if (!response.ok) throw new Error("Could not load properties");
       setData((await response.json()) as AcquisitionData);
-      setRefreshMessage("Data loaded.");
+      if (showMessage) setRefreshMessage("Data loaded.");
     } catch (error) {
       setRefreshMessage(error instanceof Error ? error.message : "Data refresh failed.");
     } finally {
@@ -712,9 +723,12 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
     setLoading(true);
     try {
       const response = await fetch("/api/refresh", { method: "POST" });
-      const body = (await response.json()) as { message?: string };
+      const body = await parseRefreshResponse(response);
+      if (!response.ok || body.ok === false) {
+        throw new Error(body.message ?? "Refresh request failed.");
+      }
       setRefreshMessage(body.message ?? "Refresh requested.");
-      await reloadData();
+      await reloadData(false);
     } catch (error) {
       setRefreshMessage(error instanceof Error ? error.message : "Refresh request failed.");
     } finally {
