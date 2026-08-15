@@ -69,6 +69,8 @@ const actionLabels: Record<AdminAction, string> = {
   seed: "Seed database"
 };
 
+const ADMIN_PASSWORD_KEY = "jy-admin-password";
+
 async function readJsonResponse(response: Response) {
   const text = await response.text();
   if (!text.trim()) return { ok: response.ok, message: response.statusText } as AdminResult;
@@ -129,8 +131,8 @@ function requiredNumber(value: string) {
 
 export function AdminConsole({ loginOnly = false }: { loginOnly?: boolean }) {
   const router = useRouter();
-  const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
+  const [inputPassword, setInputPassword] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [loadingProperties, setLoadingProperties] = useState(false);
@@ -168,12 +170,16 @@ export function AdminConsole({ loginOnly = false }: { loginOnly?: boolean }) {
   const loadProperties = useCallback(async (quiet = false) => {
     setLoadingProperties(true);
     try {
-      const response = await fetch("/api/admin/properties", { cache: "no-store" });
+      const response = await fetch("/api/admin/properties", {
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${password}`
+        }
+      });
       const body = await readJsonResponse(response);
 
       if (response.status === 401) {
-        setAuthenticated(false);
-        router.replace("/login");
+        setResult({ ...body, ok: false, status: response.status });
         return;
       }
 
@@ -198,33 +204,15 @@ export function AdminConsole({ loginOnly = false }: { loginOnly?: boolean }) {
     } finally {
       setLoadingProperties(false);
     }
-  }, [router]);
+  }, [password]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function checkSession() {
-      try {
-        const response = await fetch("/api/admin/session", { cache: "no-store" });
-        const body = await readJsonResponse(response);
-        if (cancelled) return;
-
-        const isAuthenticated = response.ok && body.authenticated === true;
-        setAuthenticated(isAuthenticated);
-        if (typeof body.username === "string") setUsername(body.username);
-        if (!loginOnly && !isAuthenticated) router.replace("/login");
-        if (loginOnly && isAuthenticated) router.replace("/admin");
-      } catch {
-        if (!cancelled && !loginOnly) router.replace("/login");
-      } finally {
-        if (!cancelled) setCheckingSession(false);
-      }
-    }
-
-    checkSession();
-    return () => {
-      cancelled = true;
-    };
+    const stored = window.sessionStorage.getItem(ADMIN_PASSWORD_KEY) ?? "";
+    setPassword(stored);
+    setAuthenticated(Boolean(stored));
+    if (!loginOnly && !stored) router.replace("/login");
+    if (loginOnly && stored) router.replace("/admin");
+    setCheckingSession(false);
   }, [loginOnly, router]);
 
   useEffect(() => {
@@ -239,43 +227,22 @@ export function AdminConsole({ loginOnly = false }: { loginOnly?: boolean }) {
 
   async function signIn(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!username.trim() || !password) return;
+    const trimmed = inputPassword.trim();
+    if (!trimmed) return;
 
-    setBusyAction("Sign in");
-    setResult(null);
-
-    try {
-      const response = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({ username, password })
-      });
-      const body = await readJsonResponse(response);
-      if (!response.ok || body.ok === false) {
-        setResult({ ...body, ok: false, status: response.status });
-        return;
-      }
-
-      setAuthenticated(true);
-      setPassword("");
-      setResult({ ok: true, message: "Signed in." });
-      router.replace("/admin");
-    } catch (error) {
-      setResult({
-        ok: false,
-        message: error instanceof Error ? error.message : "Sign in failed."
-      });
-    } finally {
-      setBusyAction(null);
-    }
+    window.sessionStorage.setItem(ADMIN_PASSWORD_KEY, trimmed);
+    setPassword(trimmed);
+    setInputPassword("");
+    setAuthenticated(true);
+    setResult({ ok: true, message: "Admin session unlocked for this browser tab." });
+    router.replace("/admin");
   }
 
   async function signOut() {
-    await fetch("/api/admin/logout", { method: "POST" }).catch(() => null);
+    window.sessionStorage.removeItem(ADMIN_PASSWORD_KEY);
     setAuthenticated(false);
     setPassword("");
+    setInputPassword("");
     setProperties([]);
     setDraft(null);
     setResult(null);
@@ -290,7 +257,8 @@ export function AdminConsole({ loginOnly = false }: { loginOnly?: boolean }) {
       const response = await fetch("/api/admin/action", {
         method: "POST",
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
+          Authorization: `Bearer ${password}`
         },
         body: JSON.stringify({ action })
       });
@@ -335,7 +303,8 @@ export function AdminConsole({ loginOnly = false }: { loginOnly?: boolean }) {
       const response = await fetch("/api/admin/properties", {
         method: "PATCH",
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
+          Authorization: `Bearer ${password}`
         },
         body: JSON.stringify({
           id: draft.id,
@@ -402,25 +371,14 @@ export function AdminConsole({ loginOnly = false }: { loginOnly?: boolean }) {
 
           <form className="admin-login-form" onSubmit={signIn}>
             <label>
-              <span>Username</span>
-              <input
-                autoComplete="username"
-                autoFocus
-                disabled={checkingSession}
-                type="text"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="admin"
-              />
-            </label>
-            <label>
               <span>Password</span>
               <input
                 autoComplete="current-password"
+                autoFocus
                 disabled={checkingSession}
                 type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                value={inputPassword}
+                onChange={(event) => setInputPassword(event.target.value)}
                 placeholder="Enter admin password"
               />
             </label>
