@@ -2,6 +2,11 @@
 
 Vercel-ready acquisition desk for UK hospitality property scouting. It rebuilds the original static map as a Next.js app with API routes, richer filters, shortlist workflow state, CSV export, and optional Postgres storage.
 
+## Documentation
+
+- [User manual](docs/user-manual.md)
+- [Technical manual](docs/technical-manual.md)
+
 ## What is included
 
 - Next.js app with Leaflet/CARTO map rendering.
