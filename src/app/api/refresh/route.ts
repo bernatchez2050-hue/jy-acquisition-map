@@ -11,31 +11,46 @@ function boundedNumber(value: string | null | undefined, fallback: number, min: 
   return Math.min(max, Math.max(min, Math.trunc(parsed)));
 }
 
-function isAuthorized(request: Request) {
+function refreshAccess(request: Request) {
   const secret = process.env.REFRESH_WEBHOOK_SECRET ?? process.env.CRON_SECRET;
-  if (!secret) return true;
   const headerSecret = request.headers.get("x-refresh-secret");
   const auth = request.headers.get("authorization");
   const cronAuth = request.headers.get("x-vercel-cron") ?? request.headers.get("user-agent");
-  if (cronAuth?.includes("vercel-cron") && process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`) return true;
-  return headerSecret === secret || auth === `Bearer ${secret}`;
+  if (cronAuth?.includes("vercel-cron") && process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`) return "private";
+  if (secret && (headerSecret === secret || auth === `Bearer ${secret}`)) return "private";
+  if (!secret || process.env.PUBLIC_REFRESH_ENABLED === "true") return "public";
+  return null;
 }
 
 async function triggerRefresh(request: Request) {
-  if (!isAuthorized(request)) {
+  const access = refreshAccess(request);
+  if (!access) {
     return Response.json({ ok: false, message: "Unauthorized refresh request." }, { status: 401 });
   }
 
   const url = new URL(request.url);
+  const isPublicRefresh = access === "public";
   const shouldImport = url.searchParams.get("import") !== "false" && process.env.AUTO_IMPORT_DISCOVERED !== "false";
-  const includePageFetch = url.searchParams.get("deep") === "true" || process.env.DISCOVERY_FETCH_PAGES === "true";
-  const maxQueries = boundedNumber(url.searchParams.get("maxQueries") ?? process.env.DISCOVERY_MAX_QUERIES, 3, 1, 24);
-  const resultsPerQuery = boundedNumber(url.searchParams.get("resultsPerQuery") ?? process.env.DISCOVERY_RESULTS_PER_QUERY, 4, 1, 10);
+  const includePageFetch = !isPublicRefresh && (url.searchParams.get("deep") === "true" || process.env.DISCOVERY_FETCH_PAGES === "true");
+  const publicMaxQueries = boundedNumber(process.env.PUBLIC_DISCOVERY_MAX_QUERIES, 3, 1, 3);
+  const publicResultsPerQuery = boundedNumber(process.env.PUBLIC_DISCOVERY_RESULTS_PER_QUERY, 4, 1, 5);
+  const maxQueries = boundedNumber(
+    url.searchParams.get("maxQueries") ?? process.env.DISCOVERY_MAX_QUERIES,
+    3,
+    1,
+    isPublicRefresh ? publicMaxQueries : 24
+  );
+  const resultsPerQuery = boundedNumber(
+    url.searchParams.get("resultsPerQuery") ?? process.env.DISCOVERY_RESULTS_PER_QUERY,
+    4,
+    1,
+    isPublicRefresh ? publicResultsPerQuery : 10
+  );
   const timeBudgetMs = boundedNumber(
     url.searchParams.get("timeBudgetMs") ?? process.env.DISCOVERY_TIME_BUDGET_MS,
     includePageFetch ? 50_000 : 25_000,
     5_000,
-    55_000
+    isPublicRefresh ? 25_000 : 55_000
   );
 
   try {
