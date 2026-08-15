@@ -13,13 +13,33 @@ const seedData = seed as SeedData;
 
 let poolPromise: Promise<import("pg").Pool> | null = null;
 
+function configuredDatabaseUrl() {
+  const databaseUrl = process.env.DATABASE_URL ?? process.env.DATABASE_POSTGRES_URL;
+  if (!databaseUrl) return null;
+
+  try {
+    const url = new URL(databaseUrl);
+    if (url.searchParams.get("sslmode") === "require") {
+      url.searchParams.set("sslmode", "verify-full");
+      return url.toString();
+    }
+  } catch {
+    return databaseUrl;
+  }
+
+  return databaseUrl;
+}
+
 export function databaseEnabled() {
-  return process.env.USE_DATABASE === "true" && Boolean(process.env.DATABASE_URL);
+  return process.env.USE_DATABASE === "true" && Boolean(configuredDatabaseUrl());
 }
 
 export async function getPool() {
+  const connectionString = configuredDatabaseUrl();
+  if (!connectionString) throw new Error("Database mode is not configured.");
+
   if (!poolPromise) {
-    poolPromise = import("pg").then(({ Pool }) => new Pool({ connectionString: process.env.DATABASE_URL }));
+    poolPromise = import("pg").then(({ Pool }) => new Pool({ connectionString }));
   }
   return poolPromise;
 }
