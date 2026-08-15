@@ -9,7 +9,7 @@ type AdminResult = {
   [key: string]: unknown;
 };
 
-const ADMIN_SECRET_KEY = "jy-admin-secret";
+const ADMIN_PASSWORD_KEY = "jy-admin-password";
 
 async function readJsonResponse(response: Response) {
   const text = await response.text();
@@ -26,14 +26,14 @@ async function readJsonResponse(response: Response) {
 
 export function AdminConsole({ loginOnly = false }: { loginOnly?: boolean }) {
   const router = useRouter();
-  const [secret, setSecret] = useState("");
-  const [inputSecret, setInputSecret] = useState("");
+  const [password, setPassword] = useState("");
+  const [inputPassword, setInputPassword] = useState("");
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [result, setResult] = useState<AdminResult | null>(null);
 
   useEffect(() => {
-    const stored = window.sessionStorage.getItem(ADMIN_SECRET_KEY) ?? "";
-    setSecret(stored);
+    const stored = window.sessionStorage.getItem(ADMIN_PASSWORD_KEY) ?? "";
+    setPassword(stored);
     if (!loginOnly && !stored) {
       router.replace("/login");
     }
@@ -41,36 +41,37 @@ export function AdminConsole({ loginOnly = false }: { loginOnly?: boolean }) {
 
   function signIn(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const trimmed = inputSecret.trim();
+    const trimmed = inputPassword.trim();
     if (!trimmed) return;
-    window.sessionStorage.setItem(ADMIN_SECRET_KEY, trimmed);
-    setSecret(trimmed);
+    window.sessionStorage.setItem(ADMIN_PASSWORD_KEY, trimmed);
+    setPassword(trimmed);
+    setInputPassword("");
     setResult({ ok: true, message: "Admin session unlocked for this browser tab." });
     router.replace("/admin");
   }
 
   function signOut() {
-    window.sessionStorage.removeItem(ADMIN_SECRET_KEY);
-    setSecret("");
-    setInputSecret("");
+    window.sessionStorage.removeItem(ADMIN_PASSWORD_KEY);
+    setPassword("");
+    setInputPassword("");
     setResult(null);
     router.replace("/login");
   }
 
-  async function runAction(action: string, url: string) {
-    if (!secret) {
-      setResult({ ok: false, message: "Enter the admin secret first." });
+  async function runAction(label: string, url: string) {
+    if (!password) {
+      setResult({ ok: false, message: "Sign in with the admin password first." });
       return;
     }
 
-    setBusyAction(action);
+    setBusyAction(label);
     setResult(null);
 
     try {
       const response = await fetch(url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${secret}`
+          Authorization: `Bearer ${password}`
         }
       });
       const body = await readJsonResponse(response);
@@ -78,12 +79,12 @@ export function AdminConsole({ loginOnly = false }: { loginOnly?: boolean }) {
         ...body,
         ok: response.ok && body.ok !== false,
         status: response.status,
-        action
+        action: label
       });
     } catch (error) {
       setResult({
         ok: false,
-        action,
+        action: label,
         message: error instanceof Error ? error.message : "Admin request failed."
       });
     } finally {
@@ -91,7 +92,7 @@ export function AdminConsole({ loginOnly = false }: { loginOnly?: boolean }) {
     }
   }
 
-  const showLogin = loginOnly || !secret;
+  const showLogin = loginOnly || !password;
 
   return (
     <main className="admin-shell">
@@ -108,22 +109,20 @@ export function AdminConsole({ loginOnly = false }: { loginOnly?: boolean }) {
         {showLogin ? (
           <form className="admin-login-form" onSubmit={signIn}>
             <label>
-              <span>Admin secret</span>
+              <span>Password</span>
               <input
                 autoComplete="current-password"
                 autoFocus
                 type="password"
-                value={inputSecret}
-                onChange={(event) => setInputSecret(event.target.value)}
-                placeholder="Enter REFRESH_WEBHOOK_SECRET"
+                value={inputPassword}
+                onChange={(event) => setInputPassword(event.target.value)}
+                placeholder="Enter admin password"
               />
             </label>
             <button className="admin-primary" type="submit">
               Sign in
             </button>
-            <p>
-              Use the same secret configured in Vercel as <strong>REFRESH_WEBHOOK_SECRET</strong>. The secret is kept in this browser tab only.
-            </p>
+            <p>Use the admin password configured for protected admin functions.</p>
           </form>
         ) : (
           <>

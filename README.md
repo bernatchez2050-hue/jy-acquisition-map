@@ -70,6 +70,15 @@ curl -X POST "$APP_URL/api/admin/migrate" -H "Authorization: Bearer $REFRESH_WEB
 curl -X POST "$APP_URL/api/admin/seed" -H "Authorization: Bearer $REFRESH_WEBHOOK_SECRET"
 ```
 
+Browser admin login:
+
+```text
+GET /login
+GET /admin
+```
+
+The login page asks for the admin password used for protected admin functions. It is kept in browser session storage for the current tab and sent as a bearer token to the admin API routes.
+
 Inspection routes:
 
 ```text

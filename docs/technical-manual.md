@@ -549,7 +549,6 @@ Likely causes:
 
 - `PUBLIC_REFRESH_ENABLED` is not true.
 - Missing or incorrect bearer secret for private refresh.
-
 Fix:
 
 - Use the browser Refresh button if public refresh is enabled.
@@ -592,4 +591,3 @@ Avoid enabling deep page fetch for public refresh.
 - Treat `/api/admin/migrate` and `/api/admin/seed` as setup/admin-only functions.
 - Review discovery quality before relying on imported candidates.
 - Keep a record of deployment IDs after production changes.
-
