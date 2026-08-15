@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { AdminConsole } from "@/components/AdminConsole";
 
 export default function LoginPage() {
-  redirect("/");
+  return <AdminConsole loginOnly />;
 }
