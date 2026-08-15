@@ -174,11 +174,6 @@ a {
   white-space: nowrap;
 }
 
-.builder-link:hover {
-  background: color-mix(in srgb, var(--bizz-teal) 16%, var(--panel-2));
-  border-color: var(--bizz-teal);
-}
-
 .topbar-metrics {
   display: grid;
   gap: 8px;

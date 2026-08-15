@@ -914,9 +914,9 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
               <span className="brand-subtitle">
                 {data.summary.total} properties · refreshed {data.metadata.refreshedAt}
               </span>
-              <a className="builder-link" href="https://bizzxpert.com" target="_blank" rel="noreferrer">
+              <span className="builder-link">
                 Built by BizzXpert
-              </a>
+              </span>
             </div>
           </div>
         </div>
@@ -1141,10 +1141,10 @@ export function AcquisitionDesk({ initialData }: { initialData: AcquisitionData 
               ))}
             </section>
 
-            <a className="sidebar-brand" href="https://bizzxpert.com" target="_blank" rel="noreferrer" aria-label="Built by BizzXpert">
+            <div className="sidebar-brand">
               <span>Built by</span>
               <img src="/bizzxpert-logo.png" alt="BizzXpert" width={120} height={54} />
-            </a>
+            </div>
           </div>
         </aside>
 
