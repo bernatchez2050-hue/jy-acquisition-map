@@ -57,7 +57,7 @@ function readCookie(request: Request, name: string) {
   return null;
 }
 
-export function verifyAdminCredentials(username: string, password: string) {
+export function verifyAdminCredentials(_username: string, password: string) {
   const credentials = configuredCredentials();
   if (!credentials.length) {
     return {
@@ -68,9 +68,8 @@ export function verifyAdminCredentials(username: string, password: string) {
   }
 
   const expectedUsername = configuredAdminUsername();
-  const validUsername = safeEqual(username.trim(), expectedUsername);
-  const validPassword = credentials.some((credential) => safeEqual(password, credential));
-  const ok = validUsername && validPassword;
+  const cleanedPassword = password.trim();
+  const ok = credentials.some((credential) => safeEqual(cleanedPassword, credential));
 
   return {
     ok,
