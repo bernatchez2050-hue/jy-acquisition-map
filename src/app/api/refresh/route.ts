@@ -1,4 +1,5 @@
 import { runDiscoveryWithLog } from "@/lib/discovery";
+import { databaseEnabled } from "@/lib/store";
 import { loadAcquisitionData } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -46,12 +47,17 @@ async function triggerRefresh(request: Request) {
       timeBudgetMs
     });
     const data = await loadAcquisitionData();
+    const hasDatabase = databaseEnabled();
     const importMessage =
       result.propertiesImported > 0
         ? ` Imported ${result.propertiesImported} into the review map.`
-        : result.candidates.length > 0
+        : result.candidates.length > 0 && !hasDatabase
           ? " No candidates were imported; enable database mode to persist them on the map."
-          : "";
+          : result.candidates.length > 0 && !shouldImport
+            ? " No candidates were imported because auto-import is disabled for this run."
+            : result.candidates.length > 0
+              ? " No new properties were imported; matching candidates were already on the map."
+              : "";
     return Response.json({
       ok: true,
       queued: false,
